@@ -1,0 +1,140 @@
+# FastResults - AI & Developer Technical Reference
+
+This document serves as the complete technical specification and architecture reference for the FastResults engine. All source code files within the project are intentionally free of inline comments for clean distribution and privacy. Use this document as the reference guide.
+
+---
+
+## 1. Project Overview
+
+FastResults is an independent, unofficial web application and CLI utility for querying and batch-processing examination results from the Tamil Nadu Dr. M.G.R. Medical University (TNMGRMU).
+
+- **Backend**: FastAPI (Python 3.10+ async)
+- **Frontend**: Vanilla JavaScript (ES6+), Neumorphism (Soft UI) CSS
+- **Network**: Low-level IPv4 address forcing for university host connectivity
+- **Caching**: Dual-tier (L1 Memory LRU + L2 Persistent SQLite)
+- **Streaming**: Server-Sent Events (SSE) for live item-by-item batch progress
+
+---
+
+## 2. Directory & Module Architecture
+
+```
+project_gmc_result_finder/
+├── app/
+│   ├── api/
+│   │   ├── __init__.py           # Package exports for API subsystem
+│   │   ├── endpoints.py          # Isolated URL constants & URL builder functions
+│   │   ├── network.py            # Socket patcher for IPv4 enforcement
+│   │   ├── caller.py             # Isolated async network request functions
+│   │   └── parsers.py            # Isolated response parsing and normalization
+│   ├── cache.py                  # Two-tier cache (Memory LRU + SQLite)
+│   ├── client.py                 # Multi-step orchestrator client
+│   ├── config.py                 # Environment and application settings
+│   ├── models.py                 # Pydantic schemas (BatchRequest, etc.)
+│   ├── routes.py                 # FastAPI API routes & SSE streaming
+│   └── __init__.py
+├── static/
+│   ├── app.js                    # UI logic, event listeners, SSE reader
+│   ├── index.html                # Neumorphic dashboard template
+│   ├── style.css                 # Tactile dual-shadow Neumorphic styles
+│   └── header.png                # Brand logo & favicon
+├── data/                         # Local database directory (results_cache.db)
+├── main.py                       # CLI entrypoint & FastAPI server runner
+├── requirements.txt              # Production dependencies
+├── run.bat                       # One-click Windows launch script
+├── README.md                     # General project overview & quickstart
+└── AI_README.md                  # This AI/developer reference guide
+```
+
+---
+
+## 3. Modular API Abstraction
+
+All external university interactions are strictly decoupled across four dedicated files in `app/api/`:
+
+### 3.1. `app/api/endpoints.py`
+Contains all remote endpoints and URL builders. If university endpoints change, edit only this file:
+- `BASE_API_URL`: Root API path (`https://cms2api.tnmgrmu.ac.in/Api/index.php`).
+- `LOGIN_ENDPOINT`: Student session lookup (`{BASE_API_URL}/Login/appLogin`).
+- `COURSE_TERM_ENDPOINT`: Available course terms (`{BASE_API_URL}/Login/loadCourseTerm`).
+- `RESULT_ENDPOINT`: Marks preview (`{BASE_API_URL}/StudentPreview/previewGradeMarkAllCourse`).
+- `build_login_url(reg_no, login_type)`: Generates encoded session query URL.
+- `build_course_term_url(reg_no, exam_session)`: Generates encoded course term query URL.
+- `build_result_url(reg_no, term_code)`: Generates encoded grade preview URL.
+
+### 3.2. `app/api/network.py`
+Guarantees reliable connectivity:
+- `KNOWN_API_HOSTS`: Maps `cms2api.tnmgrmu.ac.in` directly to IPv4 `14.139.177.26`.
+- `ipv4_getaddrinfo`: Custom socket hook that intercepts hostname resolution, forcing `AF_INET` (IPv4) to avoid blackholed NAT64 IPv6 prefixes (`64:ff9b::e8b:b11a`).
+- `patch_socket()`: Activates the hook globally on application startup.
+
+### 3.3. `app/api/caller.py`
+Executes individual HTTP calls with automatic retry and exponential backoff:
+- `_send_request_with_retry()`: Common network executor with retry on timeouts or network drops.
+- `fetch_login_session()`: Step 1 network call. Returns student metadata and exam session.
+- `fetch_course_terms()`: Step 2 network call. Returns list of terms for the student.
+- `fetch_grade_preview()`: Step 3 network call. Returns complete raw grade sheet JSON.
+
+### 3.4. `app/api/parsers.py`
+Normalizes raw university response JSON:
+- `parse_grade_preview_response()`: Extracts registration number, student name, institution, course, term, session, publication date, subjects array (with component papers: Theory, Practical, IA), and calculates overall PASS/FAIL and marks percentage.
+
+---
+
+## 4. Multi-Step Query Flow
+
+When querying a student result:
+1. `app/client.py` calls `fetch_login_session(client, reg_no)`.
+2. Extracts `exam_session` from the session response.
+3. Calls `fetch_course_terms(client, reg_no, exam_session)`.
+4. Selects the primary term code (e.g. `SECOND PROFESSIONAL`).
+5. Calls `fetch_grade_preview(client, reg_no, term_code)`.
+6. Invokes `parse_grade_preview_response()` and returns normalized dictionary.
+
+---
+
+## 5. Caching System (`app/cache.py`)
+
+- **Tier 1 (RAM)**: In-memory dictionary for sub-millisecond repeat access.
+- **Tier 2 (SQLite)**: Persistent storage in `data/results_cache.db`.
+- **TTL**: Configurable (default 7 days).
+- **Cache Invalidation**: Users can set `refresh=True` to bypass cache and force a live lookup.
+
+---
+
+## 6. Live Streaming Batch Architecture
+
+- **Endpoint**: `GET /api/batch/stream?start=<START>&end=<END>&refresh=<BOOL>`
+- **Protocol**: Server-Sent Events (`text/event-stream`).
+- **Concurrency**: Controlled via `asyncio.Semaphore(config.BATCH_CONCURRENCY)` (default: 3 concurrent requests).
+- **Event Schema**:
+  ```json
+  {
+    "type": "progress",
+    "collected": 40,
+    "total": 100,
+    "percent": 40.0,
+    "progress_text": "40% (40 out of 100 data collected)",
+    "item": { ... student result ... }
+  }
+  ```
+- **Completion Event**:
+  ```json
+  {
+    "type": "complete",
+    "collected": 100,
+    "total": 100,
+    "percent": 100.0,
+    "progress_text": "100% (100 out of 100 data collected)",
+    "successful_count": 92,
+    "failed_count": 8
+  }
+  ```
+
+---
+
+## 7. Privacy & Security Rules
+
+1. **Zero Hardcoded Data**: No student names, roll numbers, or personal identifying data may be hardcoded.
+2. **No Mock Data**: No dummy files or simulated records exist; all results are queried live or cached from real queries.
+3. **Legal Status**: This application is strictly an independent, unofficial educational utility. It must never claim to be an official university portal.

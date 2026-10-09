@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FastResults &bull; Unofficial TNMGRMU Result Viewer</title>
+    <link rel="icon" type="image/png" href="/static/header.png">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="nm-header">
+            <div class="logo-group">
+                <div class="logo-avatar">
+                    <img src="/static/header.png" alt="FastResults Logo">
+                </div>
+                <div class="logo-text">
+                    <h1>FastResults</h1>
+                    <p>Unofficial TNMGRMU Student Result Viewer</p>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <nav class="nav-pill-container">
+                    <button class="nav-tab-btn active" data-tab="singleTab">Search Result</button>
+                    <button class="nav-tab-btn" data-tab="batchTab">Batch Range</button>
+                </nav>
+                <button id="themeToggle" class="theme-toggle-btn" title="Toggle Theme" aria-label="Toggle Theme">🌓</button>
+            </div>
+        </header>
+
+        <main>
+            <section id="singleTab" class="tab-content active">
+                <div class="nm-card">
+                    <h2 class="card-title">Student Result Query</h2>
+                    <p class="card-subtitle">Fast, accessible student result viewer. Intended for educational and personal reference only.</p>
+                    
+                    <form id="searchForm">
+                        <div class="search-bar-group">
+                            <input type="text" id="regNoInput" class="nm-input" placeholder="Enter Student Registration / Roll Number" required autocomplete="off">
+                            <button type="submit" id="searchBtn" class="btn-nm btn-nm-primary">
+                                <span>Get Result</span>
+                            </button>
+                        </div>
+                        
+                        <div class="switch-group">
+                            <label class="switch-item" for="refreshToggle">
+                                <div id="refreshToggle" class="nm-switch" role="switch" aria-checked="false" tabindex="0">
+                                    <div class="nm-switch-knob"></div>
+                                </div>
+                                <span class="switch-label-text">Force Live Refresh (Bypass Local Cache)</span>
+                            </label>
+                        </div>
+                    </form>
+
+                    <div id="loadingIndicator" class="loading-box hidden">
+                        <div class="nm-spinner"></div>
+                        <p>Fetching student record...</p>
+                    </div>
+
+                    <div id="errorMessage" class="nm-alert nm-alert-error hidden"></div>
+                </div>
+
+                <div id="resultContainer" class="nm-card hidden">
+                    <div class="student-card-header">
+                        <div class="student-info">
+                            <h3 id="studentName">--</h3>
+                            <div class="roll-badge" id="studentReg">--</div>
+                            <div class="college-name" id="studentCollege">--</div>
+                            <p class="card-subtitle" style="margin-top: 4px; margin-bottom: 0;" id="studentCourse">--</p>
+                        </div>
+                        <div class="score-badge-box">
+                            <div id="overallBadge" class="nm-score-badge pass">PASS</div>
+                            <div class="percentage-text" id="overallMarks">--%</div>
+                        </div>
+                    </div>
+
+                    <div class="meta-grid">
+                        <div class="meta-pill">
+                            <span class="label">Exam Session</span>
+                            <span class="val" id="examSession">--</span>
+                        </div>
+                        <div class="meta-pill">
+                            <span class="label">Course Term</span>
+                            <span class="val" id="termName">--</span>
+                        </div>
+                        <div class="meta-pill">
+                            <span class="label">Regulation</span>
+                            <span class="val" id="regulation">--</span>
+                        </div>
+                        <div class="meta-pill">
+                            <span class="label">Published Date</span>
+                            <span class="val" id="publishDate">--</span>
+                        </div>
+                    </div>
+
+                    <h4 class="card-title" style="font-size: 1.1rem; margin-top: 1.25rem;">Subject Breakdown</h4>
+                    <div class="table-wrap">
+                        <table class="nm-table">
+                            <thead>
+                                <tr>
+                                    <th>Subject & Code</th>
+                                    <th>Component Breakdown</th>
+                                    <th>Obtained Marks</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subjectsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="batchTab" class="tab-content">
+                <div class="nm-card">
+                    <h2 class="card-title">Batch Result Range Query</h2>
+                    <p class="card-subtitle">Query an entire series of registration numbers with rate-limited live server queries.</p>
+
+                    <form id="batchForm">
+                        <div class="search-bar-group">
+                            <input type="number" id="startReg" class="nm-input" placeholder="Start Roll Number" required>
+                            <input type="number" id="endReg" class="nm-input" placeholder="End Roll Number" required>
+                            <button type="submit" id="batchBtn" class="btn-nm btn-nm-primary">Start Batch Query</button>
+                        </div>
+
+                        <div class="switch-group">
+                            <label class="switch-item" for="batchRefreshToggle">
+                                <div id="batchRefreshToggle" class="nm-switch" role="switch" aria-checked="false" tabindex="0">
+                                    <div class="nm-switch-knob"></div>
+                                </div>
+                                <span class="switch-label-text">Force Live Refresh (Bypass Local Cache)</span>
+                            </label>
+                        </div>
+                    </form>
+
+                    <div id="batchProgress" class="hidden">
+                        <div class="nm-progress-track">
+                            <div id="progressFill" class="nm-progress-bar"></div>
+                        </div>
+                        <div class="flex-between" style="margin-top: 0.6rem; align-items: center;">
+                            <p id="batchStatusText" class="card-subtitle" style="margin-bottom: 0; font-weight: 600; color: var(--accent);">0% (0 out of 0 data collected)</p>
+                            <span id="batchPercentBadge" class="status-pill pass" style="font-size: 0.8rem; font-weight: 700;">0%</span>
+                        </div>
+                    </div>
+
+                    <div id="batchErrorMessage" class="nm-alert nm-alert-error hidden"></div>
+
+                    <div id="batchResultsContainer" class="hidden" style="margin-top: 1.5rem;">
+                        <div class="flex-between" style="margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
+                            <div>
+                                <h3 class="card-title">Retrieved Student Records</h3>
+                                <p class="card-subtitle" id="batchSummaryStats" style="margin-bottom: 0; font-weight: 500;">--</p>
+                            </div>
+                            <div class="btn-group">
+                                <button id="exportCsvBtn" class="btn-nm btn-nm-sm">Download CSV</button>
+                                <button id="exportExcelBtn" class="btn-nm btn-nm-sm">Download Excel (.xlsx)</button>
+                            </div>
+                        </div>
+                        <div class="table-wrap">
+                            <table class="nm-table">
+                                <thead>
+                                    <tr>
+                                        <th>Roll No</th>
+                                        <th>Student Name</th>
+                                        <th>Institution</th>
+                                        <th>Term</th>
+                                        <th>Result</th>
+                                        <th>Marks %</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batchTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="nm-footer" style="text-align: center; margin-top: 2.5rem; padding: 1.5rem 0.5rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.6;">
+            <p style="margin-bottom: 5px;"><strong>⚠️ Unofficial Student Project:</strong> FastResults is an independent, <strong>unofficial</strong> educational tool created for students to view publicly published results.</p>
+            <p style="margin-bottom: 0;">This project is <strong>NOT affiliated with, sponsored by, or endorsed by TNMGRMU</strong> (The Tamil Nadu Dr. M.G.R. Medical University). All official inquiries should be directed to the university's official website at <a href="https://www.tnmgrmu.ac.in" target="_blank" rel="noopener noreferrer" style="color: var(--accent); text-decoration: underline;">www.tnmgrmu.ac.in</a>.</p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
